@@ -1,5 +1,4 @@
-# Screenshot Paster & Indexer
-
+# Screenshot Utility Tool
 A lightweight, interactive desktop application for pasting screenshots with automatic indexing and customizable naming patterns.
 
 ## Features
