@@ -1,25 +1,32 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+import sys
 import os
 import json
 from datetime import datetime
-from PIL import Image, ImageTk, ImageGrab
+from PIL import Image, ImageGrab
 import pyperclip
 import re
 from pathlib import Path
 
-class ScreenshotPaster:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Pic Q'er")
-        self.root.geometry("900x700")
-        self.root.configure(bg='#f0f0f0')
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QPushButton, QLineEdit, QTextEdit, QFrame, QGroupBox, QTreeWidget,
+    QTreeWidgetItem, QFileDialog, QMessageBox, QDialog, QSpinBox, QScrollArea,
+    QSizePolicy, QStyle
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFont, QPixmap, QShortcut, QKeySequence, QAction
+
+class ScreenshotPaster(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Pic Q'er")
+        self.setGeometry(100, 100, 900, 700)
         
         # Configuration
         self.save_directory = os.path.expanduser("~/Pictures/Screenshots")
         self.naming_pattern = "{date}_{time}_{counter}"
-        self.pattern_elements = ["date", "time", "counter"]  # New: track pattern as list
-        self.custom_counters = {"counter": {"value": 1, "increment": 1}}  # New: custom counters
+        self.pattern_elements = ["date", "time", "counter"]  # Track pattern as list
+        self.custom_counters = {"counter": {"value": 1, "increment": 1}}  # Custom counters
         self.index_file = os.path.join(self.save_directory, "screenshot_index.json")
         
         # Ensure save directory exists
@@ -30,87 +37,118 @@ class ScreenshotPaster:
         
         self.setup_ui()
         self.bind_shortcuts()
+        self.apply_native_styling()
         
     def setup_ui(self):
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
-        # Configure grid weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title_label = ttk.Label(main_frame, text="Screenshot Utility for Windows", 
-                               font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label = QLabel("Screenshot Utility for Windows")
+        title_font = QFont("Arial", 16, QFont.Weight.Bold)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title_label)
         
         # Save Directory Section
-        ttk.Label(main_frame, text="Save Directory:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.dir_var = tk.StringVar(value=self.save_directory)
-        dir_entry = ttk.Entry(main_frame, textvariable=self.dir_var, width=50)
-        dir_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=5)
-        ttk.Button(main_frame, text="Browse", command=self.browse_directory).grid(row=1, column=2, pady=5)
+        dir_group = QGroupBox("Save Directory")
+        dir_layout = QHBoxLayout(dir_group)
+        
+        self.dir_entry = QLineEdit(self.save_directory)
+        dir_layout.addWidget(self.dir_entry)
+        
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self.browse_directory)
+        dir_layout.addWidget(browse_btn)
+        
+        main_layout.addWidget(dir_group)
         
         # Naming Pattern Section
-        pattern_frame = ttk.LabelFrame(main_frame, text="Naming Pattern Builder", padding="10")
-        pattern_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
-        pattern_frame.columnconfigure(1, weight=1)
-        
-        # Pattern preview
-        ttk.Label(pattern_frame, text="Preview:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.pattern_preview = tk.StringVar()
-        preview_label = ttk.Label(pattern_frame, textvariable=self.pattern_preview, 
-                                 font=("Arial", 10, "bold"), foreground="blue")
-        preview_label.grid(row=0, column=1, sticky=tk.W, padx=(10, 0), pady=5)
-        
-        # Current pattern display
-        ttk.Label(pattern_frame, text="Pattern:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.pattern_display = tk.StringVar(value=self.naming_pattern)
-        pattern_label = ttk.Label(pattern_frame, textvariable=self.pattern_display, 
-                                 font=("Arial", 9), foreground="gray")
-        pattern_label.grid(row=1, column=1, sticky=tk.W, padx=(10, 0), pady=5)
-        
-        # Variable buttons
-        self.setup_pattern_builder(pattern_frame)
+        self.setup_pattern_section(main_layout)
         
         # Paste Area
-        paste_frame = ttk.LabelFrame(main_frame, text="Paste Screenshot Here", padding="10")
-        paste_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
-        paste_frame.columnconfigure(0, weight=1)
+        paste_group = QGroupBox("Paste Screenshot Here")
+        paste_layout = QVBoxLayout(paste_group)
         
-        self.paste_text = scrolledtext.ScrolledText(paste_frame, height=8, width=70)
-        self.paste_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
-        self.paste_text.insert(tk.END, "Paste your screenshot here and press Enter to save...")
-        self.paste_text.bind('<Key>', self.on_key_press)
-        self.paste_text.bind('<Button-1>', self.on_click)
+        self.paste_text = QTextEdit()
+        self.paste_text.setMaximumHeight(150)
+        self.paste_text.setPlainText("Paste your screenshot here and press Enter to save...")
+        self.paste_text.keyPressEvent = self.paste_text_key_press
+        self.paste_text.mousePressEvent = self.paste_text_mouse_press
+        paste_layout.addWidget(self.paste_text)
+        
+        main_layout.addWidget(paste_group)
         
         # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=6, column=0, columnspan=3, pady=10)
+        button_layout = QHBoxLayout()
         
-        ttk.Button(button_frame, text="Paste & Save", command=self.paste_and_save).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Take Screenshot", command=self.take_screenshot).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="View Index", command=self.view_index).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Open Folder", command=self.open_folder).pack(side=tk.LEFT, padx=5)
+        paste_save_btn = QPushButton("Paste & Save")
+        paste_save_btn.clicked.connect(self.paste_and_save)
+        button_layout.addWidget(paste_save_btn)
+        
+        screenshot_btn = QPushButton("Take Screenshot")
+        screenshot_btn.clicked.connect(self.take_screenshot)
+        button_layout.addWidget(screenshot_btn)
+        
+        view_index_btn = QPushButton("View Index")
+        view_index_btn.clicked.connect(self.view_index)
+        button_layout.addWidget(view_index_btn)
+        
+        open_folder_btn = QPushButton("Open Folder")
+        open_folder_btn.clicked.connect(self.open_folder)
+        button_layout.addWidget(open_folder_btn)
+        
+        main_layout.addLayout(button_layout)
         
         # Status
-        self.status_var = tk.StringVar(value="Ready to paste screenshots")
-        status_label = ttk.Label(main_frame, textvariable=self.status_var, font=("Arial", 9))
-        status_label.grid(row=7, column=0, columnspan=3, pady=(10, 0))
+        self.status_label = QLabel("Ready to paste screenshots")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.status_label)
         
         # Initialize pattern preview
         self.update_pattern_preview()
         
-    def setup_pattern_builder(self, parent):
-        # Variable buttons frame
-        var_frame = ttk.Frame(parent)
-        var_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
+    def setup_pattern_section(self, main_layout):
+        # Naming Pattern Section
+        pattern_group = QGroupBox("Naming Pattern Builder")
+        pattern_layout = QVBoxLayout(pattern_group)
         
-        ttk.Label(var_frame, text="Click to add variables:").grid(row=0, column=0, columnspan=6, sticky=tk.W, pady=(0, 5))
+        # Pattern preview
+        preview_layout = QHBoxLayout()
+        preview_layout.addWidget(QLabel("Preview:"))
+        self.pattern_preview = QLabel()
+        self.pattern_preview.setStyleSheet("color: blue; font-weight: bold;")
+        preview_layout.addWidget(self.pattern_preview)
+        preview_layout.addStretch()
+        pattern_layout.addLayout(preview_layout)
+        
+        # Current pattern display
+        pattern_display_layout = QHBoxLayout()
+        pattern_display_layout.addWidget(QLabel("Pattern:"))
+        self.pattern_display = QLabel(self.naming_pattern)
+        self.pattern_display.setStyleSheet("color: gray;")
+        pattern_display_layout.addWidget(self.pattern_display)
+        pattern_display_layout.addStretch()
+        pattern_layout.addLayout(pattern_display_layout)
+        
+        # Variable buttons
+        self.setup_pattern_builder(pattern_layout)
+        
+        main_layout.addWidget(pattern_group)
+    
+    def setup_pattern_builder(self, parent_layout):
+        # Variable buttons section
+        var_label = QLabel("Click to add variables:")
+        parent_layout.addWidget(var_label)
         
         # Date/Time variables
+        date_layout = QHBoxLayout()
         date_vars = [
             ("Date", "date", "YYYY-MM-DD"),
             ("Time", "time", "HH-MM-SS"), 
@@ -120,67 +158,92 @@ class ScreenshotPaster:
             ("Year", "year", "YYYY")
         ]
         
-        for i, (label, var, desc) in enumerate(date_vars):
-            btn = ttk.Button(var_frame, text=label, 
-                           command=lambda v=var: self.add_pattern_element(v))
-            btn.grid(row=1, column=i, padx=2, pady=2, sticky="ew")
-            
+        for label, var, desc in date_vars:
+            btn = QPushButton(label)
+            btn.clicked.connect(lambda checked, v=var: self.add_pattern_element(v))
+            date_layout.addWidget(btn)
+        
+        parent_layout.addLayout(date_layout)
+        
         # Counter variables
-        ttk.Label(var_frame, text="Counters:").grid(row=2, column=0, columnspan=6, sticky=tk.W, pady=(10, 5))
+        counter_label = QLabel("Counters:")
+        parent_layout.addWidget(counter_label)
         
-        counter_frame = ttk.Frame(var_frame)
-        counter_frame.grid(row=3, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=5)
+        counter_layout = QHBoxLayout()
         
-        # Default counter
-        ttk.Button(counter_frame, text="Counter", 
-                  command=lambda: self.add_pattern_element("counter")).pack(side=tk.LEFT, padx=2)
+        counter_btn = QPushButton("Counter")
+        counter_btn.clicked.connect(lambda: self.add_pattern_element("counter"))
+        counter_layout.addWidget(counter_btn)
         
-        # Custom counter button
-        ttk.Button(counter_frame, text="+ Custom Counter", 
-                  command=self.add_custom_counter).pack(side=tk.LEFT, padx=2)
+        custom_counter_btn = QPushButton("+ Custom Counter")
+        custom_counter_btn.clicked.connect(self.add_custom_counter)
+        counter_layout.addWidget(custom_counter_btn)
         
-        # Manage counters button
-        ttk.Button(counter_frame, text="Manage Counters", 
-                  command=self.manage_counters).pack(side=tk.LEFT, padx=2)
+        manage_counter_btn = QPushButton("Manage Counters")
+        manage_counter_btn.clicked.connect(self.manage_counters)
+        counter_layout.addWidget(manage_counter_btn)
         
-        # Custom text and separators
-        ttk.Label(var_frame, text="Separators & Text:").grid(row=4, column=0, columnspan=6, sticky=tk.W, pady=(10, 5))
+        counter_layout.addStretch()
+        parent_layout.addLayout(counter_layout)
         
-        separator_frame = ttk.Frame(var_frame)
-        separator_frame.grid(row=5, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=5)
+        # Separators & Text
+        sep_label = QLabel("Separators & Text:")
+        parent_layout.addWidget(sep_label)
         
+        separator_layout = QHBoxLayout()
         separators = [("_", "_"), ("-", "-"), (".", "."), (" ", "space"), ("Custom Text", "custom")]
+        
         for text, sep in separators:
+            btn = QPushButton(text)
             if sep == "custom":
-                ttk.Button(separator_frame, text=text, 
-                          command=self.add_custom_text).pack(side=tk.LEFT, padx=2)
+                btn.clicked.connect(self.add_custom_text)
             else:
-                ttk.Button(separator_frame, text=text, 
-                          command=lambda s=sep: self.add_pattern_element(s)).pack(side=tk.LEFT, padx=2)
+                btn.clicked.connect(lambda checked, s=sep: self.add_pattern_element(s))
+            separator_layout.addWidget(btn)
+        
+        separator_layout.addStretch()
+        parent_layout.addLayout(separator_layout)
         
         # Pattern control buttons
-        control_frame = ttk.Frame(var_frame)
-        control_frame.grid(row=6, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(10, 5))
+        control_layout = QHBoxLayout()
         
-        ttk.Button(control_frame, text="Clear Pattern", 
-                  command=self.clear_pattern).pack(side=tk.LEFT, padx=2)
-        ttk.Button(control_frame, text="Reset to Default", 
-                  command=self.reset_pattern).pack(side=tk.LEFT, padx=2)
-        ttk.Button(control_frame, text="Undo Last", 
-                  command=self.undo_last_element).pack(side=tk.LEFT, padx=2)
+        clear_btn = QPushButton("Clear Pattern")
+        clear_btn.clicked.connect(self.clear_pattern)
+        control_layout.addWidget(clear_btn)
+        
+        reset_btn = QPushButton("Reset to Default")
+        reset_btn.clicked.connect(self.reset_pattern)
+        control_layout.addWidget(reset_btn)
+        
+        undo_btn = QPushButton("Undo Last")
+        undo_btn.clicked.connect(self.undo_last_element)
+        control_layout.addWidget(undo_btn)
+        
+        control_layout.addStretch()
+        parent_layout.addLayout(control_layout)
 
     def bind_shortcuts(self):
-        self.root.bind('<Control-v>', lambda e: self.paste_and_save())
-        self.root.bind('<Control-s>', lambda e: self.take_screenshot())
+        # Keyboard shortcuts
+        paste_shortcut = QShortcut(QKeySequence("Ctrl+V"), self)
+        paste_shortcut.activated.connect(self.paste_and_save)
         
-    def on_key_press(self, event):
-        if event.keysym == 'Return':
+        screenshot_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        screenshot_shortcut.activated.connect(self.take_screenshot)
+        
+    def paste_text_key_press(self, event):
+        # Handle Enter key in paste area
+        if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             self.paste_and_save()
-            return 'break'
+        else:
+            # Call the original keyPressEvent
+            QTextEdit.keyPressEvent(self.paste_text, event)
             
-    def on_click(self, event):
-        if self.paste_text.get("1.0", tk.END).strip() == "Paste your screenshot here and press Enter to save...":
-            self.paste_text.delete("1.0", tk.END)
+    def paste_text_mouse_press(self, event):
+        # Clear placeholder text on click
+        if self.paste_text.toPlainText().strip() == "Paste your screenshot here and press Enter to save...":
+            self.paste_text.clear()
+        # Call the original mousePressEvent
+        QTextEdit.mousePressEvent(self.paste_text, event)
     
     # Pattern building methods
     def add_pattern_element(self, element):
@@ -191,137 +254,31 @@ class ScreenshotPaster:
     
     def add_custom_counter(self):
         """Add a custom counter"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Add Custom Counter")
-        dialog.geometry("400x200")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        ttk.Label(dialog, text="Counter Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-        name_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=name_var, width=20).grid(row=0, column=1, padx=10, pady=5)
-        
-        ttk.Label(dialog, text="Starting Value:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-        start_var = tk.StringVar(value="1")
-        ttk.Entry(dialog, textvariable=start_var, width=20).grid(row=1, column=1, padx=10, pady=5)
-        
-        ttk.Label(dialog, text="Increment:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-        inc_var = tk.StringVar(value="1")
-        ttk.Entry(dialog, textvariable=inc_var, width=20).grid(row=2, column=1, padx=10, pady=5)
-        
-        def save_counter():
-            name = name_var.get().strip()
-            if not name:
-                messagebox.showwarning("Invalid Input", "Please enter a counter name")
-                return
-            try:
-                start_val = int(start_var.get())
-                increment = int(inc_var.get())
-            except ValueError:
-                messagebox.showwarning("Invalid Input", "Please enter valid numbers")
-                return
-                
+        dialog = CustomCounterDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name, start_val, increment = dialog.get_values()
             if name in self.custom_counters:
-                if not messagebox.askyesno("Counter Exists", f"Counter '{name}' already exists. Overwrite?"):
+                reply = QMessageBox.question(self, "Counter Exists", 
+                                           f"Counter '{name}' already exists. Overwrite?",
+                                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if reply != QMessageBox.StandardButton.Yes:
                     return
                     
             self.custom_counters[name] = {"value": start_val, "increment": increment}
             self.add_pattern_element(name)
-            dialog.destroy()
-        
-        button_frame = ttk.Frame(dialog)
-        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
-        ttk.Button(button_frame, text="Add Counter", command=save_counter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
     
     def add_custom_text(self):
         """Add custom text to pattern"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Add Custom Text")
-        dialog.geometry("300x150")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        ttk.Label(dialog, text="Enter custom text:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-        text_var = tk.StringVar()
-        entry = ttk.Entry(dialog, textvariable=text_var, width=30)
-        entry.grid(row=1, column=0, padx=10, pady=5)
-        entry.focus()
-        
-        def save_text():
-            text = text_var.get().strip()
+        dialog = CustomTextDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            text = dialog.get_text()
             if text:
                 self.add_pattern_element(text)
-                dialog.destroy()
-        
-        button_frame = ttk.Frame(dialog)
-        button_frame.grid(row=2, column=0, pady=10)
-        ttk.Button(button_frame, text="Add", command=save_text).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        
-        entry.bind('<Return>', lambda e: save_text())
     
     def manage_counters(self):
         """Open counter management dialog"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Manage Counters")
-        dialog.geometry("500x400")
-        
-        # Create treeview for counters
-        columns = ('Counter', 'Current Value', 'Increment')
-        tree = ttk.Treeview(dialog, columns=columns, show='headings', height=10)
-        
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=150)
-        
-        tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Populate tree
-        def refresh_tree():
-            tree.delete(*tree.get_children())
-            for name, data in self.custom_counters.items():
-                tree.insert('', tk.END, values=(name, data['value'], data['increment']))
-        
-        refresh_tree()
-        
-        # Buttons
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        def reset_counter():
-            selection = tree.selection()
-            if not selection:
-                messagebox.showwarning("No Selection", "Please select a counter to reset")
-                return
-            item = tree.item(selection[0])
-            counter_name = item['values'][0]
-            
-            if messagebox.askyesno("Reset Counter", f"Reset counter '{counter_name}' to its starting value?"):
-                # Find original increment to determine starting value
-                original_start = self.custom_counters[counter_name].get('original_start', 1)
-                self.custom_counters[counter_name]['value'] = original_start
-                refresh_tree()
-        
-        def delete_counter():
-            selection = tree.selection()
-            if not selection:
-                messagebox.showwarning("No Selection", "Please select a counter to delete")
-                return
-            item = tree.item(selection[0])
-            counter_name = item['values'][0]
-            
-            if counter_name == "counter":
-                messagebox.showwarning("Cannot Delete", "Cannot delete the default counter")
-                return
-                
-            if messagebox.askyesno("Delete Counter", f"Delete counter '{counter_name}'?"):
-                del self.custom_counters[counter_name]
-                refresh_tree()
-        
-        ttk.Button(button_frame, text="Reset Selected", command=reset_counter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Delete Selected", command=delete_counter).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        dialog = CounterManagementDialog(self, self.custom_counters)
+        dialog.exec()
     
     def clear_pattern(self):
         """Clear the current pattern"""
@@ -354,15 +311,15 @@ class ScreenshotPaster:
                 pattern_parts.append(element)
         
         self.naming_pattern = "".join(pattern_parts)
-        self.pattern_display.set(self.naming_pattern)
+        self.pattern_display.setText(self.naming_pattern)
     
     def update_pattern_preview(self):
         """Update the pattern preview with current date/time"""
         try:
             preview = self.generate_filename_preview()
-            self.pattern_preview.set(preview)
+            self.pattern_preview.setText(preview)
         except Exception as e:
-            self.pattern_preview.set("Invalid pattern")
+            self.pattern_preview.setText("Invalid pattern")
     
     def generate_filename_preview(self):
         """Generate a preview filename without incrementing counters"""
@@ -404,35 +361,13 @@ class ScreenshotPaster:
         return filename
             
     def browse_directory(self):
-        directory = filedialog.askdirectory(initialdir=self.save_directory)
+        directory = QFileDialog.getExistingDirectory(self, "Select Directory", self.save_directory)
         if directory:
             self.save_directory = directory
-            self.dir_var.set(directory)
+            self.dir_entry.setText(directory)
             self.index_file = os.path.join(directory, "screenshot_index.json")
             self.load_index()
             
-    def show_pattern_help(self):
-        help_text = """Naming Pattern Variables:
-        
-{date} - Current date (YYYY-MM-DD)
-{time} - Current time (HH-MM-SS)
-{counter} - Sequential counter
-{timestamp} - Full timestamp (YYYY-MM-DD_HH-MM-SS)
-
-Examples:
-- {date}_{time}_{counter} → 2024-01-15_14-30-25_1.png
-- screenshot_{counter} → screenshot_1.png
-- {timestamp} → 2024-01-15_14-30-25.png"""
-        
-        help_window = tk.Toplevel(self.root)
-        help_window.title("Naming Pattern Help")
-        help_window.geometry("400x300")
-        
-        text_widget = scrolledtext.ScrolledText(help_window, wrap=tk.WORD)
-        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        text_widget.insert(tk.END, help_text)
-        text_widget.config(state=tk.DISABLED)
-        
     def paste_and_save(self):
         try:
             # Get image from clipboard
@@ -444,34 +379,34 @@ Examples:
                 if os.path.isfile(clipboard_text):
                     image = Image.open(clipboard_text)
                 else:
-                    messagebox.showwarning("No Image", "No image found in clipboard!")
+                    QMessageBox.warning(self, "No Image", "No image found in clipboard!")
                     return
                     
             if image:
                 self.save_image(image)
             else:
-                messagebox.showwarning("No Image", "No image found in clipboard!")
+                QMessageBox.warning(self, "No Image", "No image found in clipboard!")
                 
         except Exception as e:
-            messagebox.showerror("Error", f"Error pasting image: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error pasting image: {str(e)}")
             
     def take_screenshot(self):
         try:
             # Minimize the window temporarily
-            self.root.iconify()
-            self.root.after(500, self._capture_screenshot)
+            self.showMinimized()
+            QTimer.singleShot(500, self._capture_screenshot)
         except Exception as e:
-            messagebox.showerror("Error", f"Error taking screenshot: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error taking screenshot: {str(e)}")
             
     def _capture_screenshot(self):
         try:
             # Take screenshot
             screenshot = ImageGrab.grab()
-            self.root.deiconify()  # Restore window
+            self.showNormal()  # Restore window
             self.save_image(screenshot)
         except Exception as e:
-            self.root.deiconify()
-            messagebox.showerror("Error", f"Error taking screenshot: {str(e)}")
+            self.showNormal()
+            QMessageBox.critical(self, "Error", f"Error taking screenshot: {str(e)}")
             
     def save_image(self, image):
         # Generate filename based on pattern
@@ -485,13 +420,13 @@ Examples:
         self.add_to_index(filename, filepath)
         
         # Update status
-        self.status_var.set(f"Saved: {filename}")
+        self.status_label.setText(f"Saved: {filename}")
         
         # Clear paste area
-        self.paste_text.delete("1.0", tk.END)
-        self.paste_text.insert(tk.END, "Paste your screenshot here and press Enter to save...")
+        self.paste_text.clear()
+        self.paste_text.setPlainText("Paste your screenshot here and press Enter to save...")
         
-        messagebox.showinfo("Success", f"Screenshot saved as {filename}")
+        QMessageBox.information(self, "Success", f"Screenshot saved as {filename}")
         
     def generate_filename(self):
         pattern = self.naming_pattern
@@ -583,41 +518,268 @@ Examples:
             json.dump(data, f, indent=2)
             
     def view_index(self):
-        index_window = tk.Toplevel(self.root)
-        index_window.title("Screenshot Index")
-        index_window.geometry("600x400")
-        
-        # Create treeview
-        columns = ('Filename', 'Created', 'Size')
-        tree = ttk.Treeview(index_window, columns=columns, show='headings')
-        
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=150)
-            
-        # Add data
-        for entry in self.screenshot_index:
-            created = datetime.fromisoformat(entry['created']).strftime("%Y-%m-%d %H:%M:%S")
-            size_mb = f"{entry['size'] / 1024 / 1024:.2f} MB"
-            tree.insert('', tk.END, values=(entry['filename'], created, size_mb))
-            
-        tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(index_window, orient=tk.VERTICAL, command=tree.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        tree.configure(yscrollcommand=scrollbar.set)
+        dialog = IndexViewDialog(self, self.screenshot_index)
+        dialog.exec()
         
     def open_folder(self):
         try:
             os.startfile(self.save_directory)
         except:
-            messagebox.showerror("Error", f"Could not open folder: {self.save_directory}")
+            QMessageBox.critical(self, "Error", f"Could not open folder: {self.save_directory}")
+
+    def apply_native_styling(self):
+        """Apply native OS styling to the application"""
+        # Remove any custom stylesheets to use pure native styling
+        self.setStyleSheet("")
+        
+        # Set standard margins and spacing for a clean native look
+        self.setContentsMargins(5, 5, 5, 5)
+        
+        # Use system default font
+        system_font = QApplication.font()
+        self.setFont(system_font)
+        
+        # Apply native styling to all child widgets
+        self._apply_native_to_children()
+    
+    def _apply_native_to_children(self):
+        """Apply native styling settings to all child widgets"""
+        # Set minimum button heights for better native appearance
+        for button in self.findChildren(QPushButton):
+            button.setMinimumHeight(25)
+            button.setStyleSheet("")  # Remove any custom styling
+            
+        # Ensure text widgets use native styling
+        for text_edit in self.findChildren(QTextEdit):
+            text_edit.setStyleSheet("")
+            
+        for line_edit in self.findChildren(QLineEdit):
+            line_edit.setStyleSheet("")
+            
+        # Group boxes with native styling
+        for group_box in self.findChildren(QGroupBox):
+            group_box.setStyleSheet("")
+
+
+class CustomCounterDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Custom Counter")
+        self.setFixedSize(400, 200)
+        self.setStyleSheet("")  # Use native styling
+        
+        layout = QVBoxLayout(self)
+        
+        # Name input
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Counter Name:"))
+        self.name_edit = QLineEdit()
+        name_layout.addWidget(self.name_edit)
+        layout.addLayout(name_layout)
+        
+        # Starting value
+        start_layout = QHBoxLayout()
+        start_layout.addWidget(QLabel("Starting Value:"))
+        self.start_spin = QSpinBox()
+        self.start_spin.setRange(0, 99999)
+        self.start_spin.setValue(1)
+        start_layout.addWidget(self.start_spin)
+        layout.addLayout(start_layout)
+        
+        # Increment
+        inc_layout = QHBoxLayout()
+        inc_layout.addWidget(QLabel("Increment:"))
+        self.inc_spin = QSpinBox()
+        self.inc_spin.setRange(1, 100)
+        self.inc_spin.setValue(1)
+        inc_layout.addWidget(self.inc_spin)
+        layout.addLayout(inc_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        ok_btn = QPushButton("Add Counter")
+        ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(ok_btn)
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def get_values(self):
+        return self.name_edit.text().strip(), self.start_spin.value(), self.inc_spin.value()
+    
+    def accept(self):
+        if not self.name_edit.text().strip():
+            QMessageBox.warning(self, "Invalid Input", "Please enter a counter name")
+            return
+        super().accept()
+
+
+class CustomTextDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Custom Text")
+        self.setFixedSize(300, 150)
+        self.setStyleSheet("")  # Use native styling
+        
+        layout = QVBoxLayout(self)
+        
+        layout.addWidget(QLabel("Enter custom text:"))
+        
+        self.text_edit = QLineEdit()
+        layout.addWidget(self.text_edit)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        add_btn = QPushButton("Add")
+        add_btn.clicked.connect(self.accept)
+        button_layout.addWidget(add_btn)
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Focus on text input and bind Enter key
+        self.text_edit.setFocus()
+        self.text_edit.returnPressed.connect(self.accept)
+    
+    def get_text(self):
+        return self.text_edit.text().strip()
+
+
+class CounterManagementDialog(QDialog):
+    def __init__(self, parent=None, custom_counters=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Counters")
+        self.setFixedSize(500, 400)
+        self.setStyleSheet("")  # Use native styling
+        self.custom_counters = custom_counters or {}
+        
+        layout = QVBoxLayout(self)
+        
+        # Tree widget for counters
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(['Counter', 'Current Value', 'Increment'])
+        layout.addWidget(self.tree)
+        
+        self.refresh_tree()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        reset_btn = QPushButton("Reset Selected")
+        reset_btn.clicked.connect(self.reset_counter)
+        button_layout.addWidget(reset_btn)
+        
+        delete_btn = QPushButton("Delete Selected")
+        delete_btn.clicked.connect(self.delete_counter)
+        button_layout.addWidget(delete_btn)
+        
+        button_layout.addStretch()
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def refresh_tree(self):
+        self.tree.clear()
+        for name, data in self.custom_counters.items():
+            item = QTreeWidgetItem([name, str(data['value']), str(data['increment'])])
+            self.tree.addTopLevelItem(item)
+    
+    def reset_counter(self):
+        current_item = self.tree.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "No Selection", "Please select a counter to reset")
+            return
+        
+        counter_name = current_item.text(0)
+        reply = QMessageBox.question(self, "Reset Counter", 
+                                   f"Reset counter '{counter_name}' to its starting value?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            original_start = self.custom_counters[counter_name].get('original_start', 1)
+            self.custom_counters[counter_name]['value'] = original_start
+            self.refresh_tree()
+    
+    def delete_counter(self):
+        current_item = self.tree.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "No Selection", "Please select a counter to delete")
+            return
+        
+        counter_name = current_item.text(0)
+        
+        if counter_name == "counter":
+            QMessageBox.warning(self, "Cannot Delete", "Cannot delete the default counter")
+            return
+        
+        reply = QMessageBox.question(self, "Delete Counter", 
+                                   f"Delete counter '{counter_name}'?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            del self.custom_counters[counter_name]
+            self.refresh_tree()
+
+
+class IndexViewDialog(QDialog):
+    def __init__(self, parent=None, screenshot_index=None):
+        super().__init__(parent)
+        self.setWindowTitle("Screenshot Index")
+        self.setFixedSize(600, 400)
+        self.setStyleSheet("")  # Use native styling
+        self.screenshot_index = screenshot_index or []
+        
+        layout = QVBoxLayout(self)
+        
+        # Tree widget for index
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(['Filename', 'Created', 'Size'])
+        layout.addWidget(self.tree)
+        
+        # Populate tree
+        for entry in self.screenshot_index:
+            created = datetime.fromisoformat(entry['created']).strftime("%Y-%m-%d %H:%M:%S")
+            size_mb = f"{entry['size'] / 1024 / 1024:.2f} MB"
+            item = QTreeWidgetItem([entry['filename'], created, size_mb])
+            self.tree.addTopLevelItem(item)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
 
 def main():
-    root = tk.Tk()
-    app = ScreenshotPaster(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    app.setApplicationName("Pic Q'er")
+    app.setOrganizationName("ScreenshotPaster")
+    
+    # Use native OS styling
+    # Qt6 automatically uses native styling by default, but we can ensure it
+    if sys.platform == "win32":
+        try:
+            app.setStyle('windowsvista')  # Modern Windows style
+        except:
+            try:
+                app.setStyle('windows')  # Fallback to basic Windows style
+            except:
+                pass  # Use default style
+    
+    window = ScreenshotPaster()
+    window.show()
+    
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main() 
+    main()
